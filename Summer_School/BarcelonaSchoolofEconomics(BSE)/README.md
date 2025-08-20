@@ -1,4 +1,4 @@
-# 🎓 Barcelona School of Economics – Summer School 2024
+# 🎓 Barcelona School of Economics – Summer School 2025
 
 ## 📍 Program
 **Quantitative Methods for Public Policy Evaluation**  
