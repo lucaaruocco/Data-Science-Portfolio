@@ -39,27 +39,27 @@ It serves as a versatile tool for the **banking and investment sector, businesse
 Below are some demonstrative screenshots of the platform (with anonymized data).  
 
 <p align="center">
-  <img src="screenshots/search-company.png" alt="Company search interface" width="600"/>
+  <img src="./screenshots/search-company.png" alt="Company search interface" width="600"/>
 </p>
 
 <p align="center">
-  <img src="screenshots/company-overview.png" alt="Company overview" width="600"/>
+  <img src="./screenshots/company-overview.png" alt="Company overview" width="600"/>
 </p>
 
 <p align="center">
-  <img src="screenshots/financial-analysis.png" alt="Financial analysis section" width="600"/>
+  <img src="./screenshots/financial-analysis.png" alt="Financial analysis section" width="600"/>
 </p>
 
 <p align="center">
-  <img src="screenshots/ratios-selection.png" alt="Ratios selection" width="600"/>
+  <img src="./screenshots/ratios-selection.png" alt="Ratios selection" width="600"/>
 </p>
 
 <p align="center">
-  <img src="screenshots/industry-competitive.png" alt="Industry & competitive positioning" width="600"/>
+  <img src="./screenshots/industry-competitive.png" alt="Industry & competitive positioning" width="600"/>
 </p>
 
 <p align="center">
-  <img src="screenshots/project-funding.png" alt="Project funding matching" width="600"/>
+  <img src="./screenshots/project-funding.png" alt="Project funding matching" width="600"/>
 </p>
 
 ---
