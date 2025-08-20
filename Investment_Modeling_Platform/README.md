@@ -43,23 +43,23 @@ Below are some demonstrative screenshots of the platform (with anonymized data).
 </p>
 
 <p align="center">
-  <img src="./screenshots/company-overview.png" alt="Company overview" width="600"/>
+  <img src="./screenshots/company-overview.PNG" alt="Company overview" width="600"/>
 </p>
 
 <p align="center">
-  <img src="./screenshots/financial-analysis.png" alt="Financial analysis section" width="600"/>
+  <img src="./screenshots/financial-analysis.PNG" alt="Financial analysis section" width="600"/>
 </p>
 
 <p align="center">
-  <img src="./screenshots/ratios-selection.png" alt="Ratios selection" width="600"/>
+  <img src="./screenshots/ratios-selection.PNG" alt="Ratios selection" width="600"/>
 </p>
 
 <p align="center">
-  <img src="./screenshots/industry-competitive.png" alt="Industry & competitive positioning" width="600"/>
+  <img src="./screenshots/industry-competitive.PNG" alt="Industry & competitive positioning" width="600"/>
 </p>
 
 <p align="center">
-  <img src="./screenshots/project-funding.png" alt="Project funding matching" width="600"/>
+  <img src="./screenshots/project-funding.PNG" alt="Project funding matching" width="600"/>
 </p>
 
 ---
