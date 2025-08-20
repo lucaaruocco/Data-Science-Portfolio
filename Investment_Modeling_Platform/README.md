@@ -39,7 +39,7 @@ It serves as a versatile tool for the **banking and investment sector, businesse
 Below are some demonstrative screenshots of the platform (with anonymized data).  
 
 <p align="center">
-  <img src="./screenshots/search-company.png" alt="Company search interface" width="600"/>
+  <img src="./screenshots/search-company.PNG" alt="Company search interface" width="600"/>
 </p>
 
 <p align="center">
