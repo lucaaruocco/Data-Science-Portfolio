@@ -1,47 +1,45 @@
 # 💼 Investment Modeling Platform (IMP)
 
-**Investment Modeling Platform (IMP)** è una web application che integra  
-**data mining, intelligenza artificiale e analisi finanziaria avanzata**  
-per generare report aziendali completi e strumenti di supporto alle decisioni.  
+**Investment Modeling Platform (IMP)** is a web application that integrates  
+**data mining, artificial intelligence, and advanced financial analysis**  
+to generate comprehensive business reports and decision-support tools.  
 
-La piattaforma trasforma i dati ufficiali in insight immediati, offrendo una visione a 360° su aziende, settori e opportunità di finanziamento.  
-
----
-
-## ✨ Cosa fa la piattaforma
-IMP permette di:
-- 📑 **Profilare un’impresa**: dati legali, struttura organizzativa, oggetto sociale, dipendenti.  
-- 💰 **Analizzare i bilanci**: consultazione dei documenti ufficiali in versione compatta o dettagliata, con serie storiche.  
-- 📊 **Effettuare analisi finanziarie avanzate**: sei macro-aree, decine di indici personalizzati (redditività, liquidità, leva, capitale umano, costi, capitale circolante).  
-- 🏭 **Confrontare con il settore**: benchmark basati sui codici ATECO/NACE.  
-- ⚔️ **Valutare la concorrenza**: individuazione automatica dei competitor e confronto diretto delle performance.  
-- 🎯 **Trovare bandi e opportunità** (*Matching*):  
-  - modalità *Project → Calls*: da un progetto vengono proposti i bandi coerenti;  
-  - modalità *Firm → Calls*: l’azienda viene matchata con i finanziamenti disponibili.  
+The platform transforms official data into actionable insights, offering a **360° view of companies, industries, and funding opportunities**.  
 
 ---
 
-## 👥 Destinatari
-La piattaforma è stata progettata per chi deve prendere decisioni strategiche o finanziarie.  
-È uno strumento utile tanto al mondo bancario e degli investitori, quanto alle imprese e ai loro consulenti.  
-Dai responsabili aziendali agli analisti, dagli intermediari finanziari ai fund raiser e alle associazioni di categoria:  
-IMP diventa un supporto trasversale, capace di adattarsi alle esigenze di attori diversi all’interno dell’ecosistema economico.
+## ✨ What the platform does
+IMP provides:  
+- 📑 **Company profiling**: legal data, organizational structure, corporate purpose, workforce.  
+- 💰 **Financial statement analysis**: consultation of official filings in compact or detailed form, with historical trends.  
+- 📊 **Advanced financial analysis**: six macro-areas with dozens of tailored indicators (profitability, liquidity, leverage, human capital, costs, working capital).  
+- 🏭 **Industry benchmarking**: comparison against sector averages (ATECO/NACE codes).  
+- ⚔️ **Competitive assessment**: automated identification of competitors and performance benchmarking.  
+- 🎯 **Funding & Matching**:  
+  - *Project → Calls*: relevant funding opportunities suggested from a project proposal.  
+  - *Firm → Calls*: matching a company’s profile with available funding programs.  
 
 ---
 
-## 🚀 Valore aggiunto
-- Automatizza attività di analisi complesse e ripetitive.  
-- Converte i dati grezzi in insight chiari e immediatamente utilizzabili.  
-- Supporta processi decisionali **data-driven** in modo affidabile e scalabile.  
+## 👥 Target audience
+IMP is designed for professionals and organizations involved in **strategic and financial decision-making**.  
+It serves as a versatile tool for the **banking and investment sector, businesses, consultants, fundraisers, trade associations, and analysts**, adapting to the diverse needs of today’s economic ecosystem.  
 
 ---
 
-## 📂 Esempi di output
-Per motivi di riservatezza non vengono pubblicati report o analisi reali.  
-È in valutazione il caricamento di **esempi dimostrativi e sintetici** per illustrare le funzionalità della piattaforma. 
+## 🚀 Added value
+- Automates complex and time-consuming analytical tasks.  
+- Transforms raw data into clear, actionable insights.  
+- Supports **data-driven decision-making** in a reliable and scalable way.  
 
 ---
 
-> ℹ️ **Nota**: questo repository contiene esclusivamente materiale a scopo dimostrativo.  
-> I dati reali delle aziende non vengono resi pubblici.
+## 📂 Output examples
+For confidentiality reasons, actual reports and analyses are not published.  
+The release of **demonstrative examples and synthetic datasets** to showcase the platform’s features is under consideration.  
 
+---
+
+> ℹ️ **Note**  
+> This repository contains material for demonstration purposes only.  
+> Actual company data is not made public.  
