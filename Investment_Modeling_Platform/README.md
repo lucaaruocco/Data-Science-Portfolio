@@ -2,7 +2,7 @@
 
 **Investment Modeling Platform (IMP)** is a web application that integrates  
 **data mining, artificial intelligence, and advanced financial analysis**  
-to generate comprehensive business reports and decision-support tools.  
+to generate comprehensive business reports and decision-support tools. 
 
 The platform transforms official data into actionable insights, offering a **360° view of companies, industries, and funding opportunities**.  
 
