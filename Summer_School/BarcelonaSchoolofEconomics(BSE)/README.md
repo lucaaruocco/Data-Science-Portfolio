@@ -31,9 +31,30 @@ This course introduced the **main econometric approaches** used for the evaluati
 
 ## 📂 Repository content
 - `certificate.pdf` → official certificate of participation.  
-- `project/` → replication exercises and applied case studies (Stata and R).  
+- `BSE_exercises.do` → consolidated Stata do-file with all replication exercises.  
+- `project/` → additional applied case studies (Stata and R).  
+
+---
+
+## 📂 Exercises
+All empirical replications from the course have been consolidated into a single Stata do-file:
+
+- [`BSE_exercises.do`](./BSE_exercises.do)
+
+### 📌 Content
+The file is structured into five sections, each corresponding to one of the main methods covered in the Summer School:
+1. **Randomized Controlled Trials (RCTs)**
+2. **Regression Discontinuity Designs (RDD)**
+3. **Selection on Observables (Regression, Matching)**
+4. **Difference-in-Differences (DiD)**
+5. **Synthetic Control Methods**
+
+### ▶️ How to run
+Open `BSE_exercises.do` in **Stata** and execute the sections of interest.  
+The code is organized and commented to mirror the course structure, allowing users to easily replicate the analyses and adapt them to new datasets.
+
+👉 These exercises replicate results from prominent published studies and illustrate the practical application of modern causal inference techniques.  
 
 ---
 
 👉 This program provided solid foundations in **causal inference and econometric evaluation methods**, essential tools for applied research in economics and public policy.
-
