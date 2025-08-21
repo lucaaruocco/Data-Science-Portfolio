@@ -1,3 +1,6 @@
+[![Made with Python](https://img.shields.io/badge/Made%20with-Python-blue.svg)]
+[![Master's Projects](https://img.shields.io/badge/Master-Projects-green.svg)]
+
 # 📊 Data Science & AI Portfolio – Luca Ruocco
 
 Welcome to my portfolio!  
