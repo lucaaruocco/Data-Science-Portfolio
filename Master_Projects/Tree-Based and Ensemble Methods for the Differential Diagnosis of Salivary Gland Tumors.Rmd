@@ -1,0 +1,1689 @@
+---
+title: "Differential Diagnosis of Salivary Gland Tumors through In-flammatory Biomarkers and Radiomics Metrics"
+author: "Roberta Fusco & Luca Ruocco"
+output:
+  pdf_document:
+  always_allow_html: true
+  latex_engine: xelatex
+  word_document: default
+  html_document: default
+header-includes:
+  - \usepackage{longtable}
+date: "2025-03-24"
+---
+
+## Introduzione
+
+La diagnosi differenziale preoperatoria dei tumori delle ghiandole salivari rappresenta ancora oggi una sfida per i clinici, a causa della marcata eterogeneità istologica di queste lesioni. Sebbene strumenti diagnostici come l’ecografia, la risonanza magnetica (MRI) e l’agoaspirato con ago sottile (FNAC) siano ampiamente utilizzati, essi non sempre garantiscono una classificazione precisa della natura benigna o maligna della neoplasia, soprattutto nei casi citologicamente incerti.
+
+Negli ultimi anni, l’interesse per biomarcatori infiammatori sistemici, come il rapporto neutrofili/linfociti (NLR), il rapporto piastrine/linfociti (PLR), l’indice di infiammazione sistemica (SII) e l’indice di risposta infiammatoria sistemica (SIRI), è cresciuto notevolmente nel contesto oncologico. Tali indici, ottenibili da comuni esami ematochimici, si sono dimostrati correlati non solo alla prognosi di varie neoplasie, ma anche potenzialmente utili per finalità diagnostiche.
+
+Parallelamente, lo sviluppo della radiomica, ovvero l’estrazione automatica di caratteristiche quantitative da immagini mediche tramite algoritmi di intelligenza artificiale, ha aperto nuove prospettive per la stratificazione del rischio e il supporto decisionale prechirurgico. In particolare, l’analisi radiomica delle sequenze MRI consente una valutazione oggettiva e dettagliata dell’eterogeneità tumorale, superando la soggettività insita nella sola interpretazione visiva delle immagini da parte del radiologo.
+
+Questo studio si propone di valutare, in maniera preliminare, la capacità diagnostica combinata dei biomarcatori infiammatori sistemici e delle metriche radiomiche estratte da immagini MRI, al fine di supportare una corretta differenziazione preoperatoria tra tumori benigni e maligni delle ghiandole salivari. Attraverso l’impiego di metodi statistici univariati e multivariati, inclusi approcci di machine learning, si intende verificare l’efficacia di questi strumenti nel supportare, o potenzialmente superare, le metodiche diagnostiche convenzionali, in particolar modo nei casi con esito citologico incerto.
+
+## Descrizione delle variabili del database
+
+Il database utilizzato nello studio include sia biomarcatori infiammatori sistemici che caratteristiche radiomiche estratte da immagini di risonanza magnetica (MRI). I dati sono organizzati in due fogli:
+
+### Variabili cliniche e diagnostiche
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(knitr)
+
+variabili_cliniche <- data.frame(
+  Variabile = c("NLR", "PLR", "SII", "SIRI", "diagnosis", "Grading"),
+  Descrizione = c(
+    "Neutrophil-to-Lymphocyte Ratio – rapporto tra neutrofili e linfociti.",
+    "Platelet-to-Lymphocyte Ratio – rapporto tra piastrine e linfociti.",
+    "Systemic Immune-Inflammation Index – indice che combina neutrofili, linfociti e piastrine.",
+    "Systemic Inflammation Response Index – indice infiammatorio sistemico combinato.",
+    "Diagnosi istologica della lesione della ghiandola salivare: 1 = Tumore di Warthin; 2 = Adenoma pleomorfo; 3 = Carcinoma maligno.",
+    "Grado di aggressività della lesione: 0 = benigno; 1 = maligno (variabile target)."
+  )
+)
+
+kable(variabili_cliniche, caption = "Variabili cliniche e diagnostiche presenti nel foglio 1")
+```
+
+La variabile Target Grading è 0 per lesioni benigne (ovvero wartin tumor a adanoma pleomorfo) e 1 per lesioni magligne.
+
+### Variabili radiomiche
+Nel secondo foglio sono presenti 851 variabili radiomiche, derivate da immagini MRI mediante software radiomico. Queste variabili comprendono:
+
+Shape: misure morfologiche (volume, diametro massimo, area superficiale, ecc.)
+
+Texture: come GLCM, GLDM, NGTDM, descrivono la struttura interna e la distribuzione dell’intensità dei voxel.
+
+Wavelet features: caratteristiche ottenute tramite trasformazioni wavelet multiscala, che catturano diversi livelli di dettaglio spaziale dell’immagine.
+
+
+```{r setup, include=FALSE}
+library(knitr)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(readxl)
+library(factoextra)
+library(cluster)
+library(caret)
+library(pROC)
+library(car)
+library(MASS)  
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(ggpubr)
+library(gridExtra)
+library(tree)
+library(ipred)
+library(adabag)
+library(party)
+library(glmnet)
+library(ROSE)
+library(themis)
+library(recipes)
+library(adabag)
+library(tidyr)
+```
+
+```{r setup_main, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+```{r data_loading}
+database <- "Database2.xlsx"
+dati1 <- as.data.frame(read_excel(database, sheet = 1))
+dati2 <- as.data.frame(read_excel(database, sheet = 2))
+
+```
+
+```{r data_cancro}
+var_cliniche = c("NLR", "PLR", "SII", "SIRI")
+dati_clinici= as.data.frame(dati1[, var_cliniche])
+
+data <- cbind(dati_clinici, dati2)  
+
+# Calcolo frequenze e percentuali
+diagnosi_plot <- dati1 %>%
+  count(diagnosis) %>%
+  mutate(percentuale = round(100 * n / sum(n), 1))
+
+# Grafico con percentuali sulle barre
+ggplot(diagnosi_plot, aes(x = as.factor(diagnosis), y = n, fill = as.factor(diagnosis))) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste0(percentuale, "%")), 
+            vjust = -0.5, size = 4) +
+  labs(title = "Distribuzione della variabile diagnosis",
+       x = "Tipo di diagnosi (1=Warthin, 2=Adenoma Pleomorfo, 3=Carcinoma)",
+       y = "Frequenza") +
+  theme_minimal() +
+  scale_fill_brewer(palette = "Set2", name = "Diagnosi")
+
+# Selezione delle variabili cliniche per il clustering
+dati_cluster <- scale(dati_clinici) # standardizzazione
+```
+
+```{r Kmeans su diagnosis}
+
+# Applichiamo k-means con k = 3
+set.seed(123)  # per riproducibilità
+km_res <- kmeans(dati_cluster, centers = 3, nstart = 25)
+
+# Visualizzazione con PCA
+fviz_cluster(km_res, data = dati_cluster,
+             ellipse.type = "convex",
+             geom = "point",
+             palette = "Set2",
+             ggtheme = theme_minimal(),
+             main = "Clustering K-means (k = 3) su variabili cliniche")
+
+# Aggiungiamo i cluster al dataset originale
+Cluster_Kmeans <- as.factor(km_res$cluster)
+
+# Tabella incrociata per vedere la corrispondenza tra cluster e diagnosis
+tabella_confronto <- table(Cluster = Cluster_Kmeans, Diagnosis = dati1$diagnosis)
+tabella_confronto
+
+# Trova la classe diagnosis più frequente per ciascun cluster
+cluster_to_diag <- apply(tabella_confronto, 1, function(r) as.numeric(names(which.max(r))))
+cluster_to_diag
+
+# Mappa i cluster alla diagnosi prevalente
+diagnosis_pred_kmeans <- as.numeric(cluster_to_diag[as.character(Cluster_Kmeans)])
+
+# Etichette vere
+actual <- as.factor(dati1$diagnosis)
+
+# Etichette predette (dal clustering)
+# pred_class è l'output del clustering assegnato prima
+predicted <- as.factor(diagnosis_pred_kmeans)  
+
+# Matrice di confusione
+conf_mat <- confusionMatrix(predicted, actual)
+
+# Visualizza la matrice
+print(conf_mat)
+```
+
+L’analisi dei risultati del clustering K-means applicato alle variabili cliniche (NLR, PLR, SII, SIRI) ha prodotto 3 gruppi distinti, che sono stati successivamente confrontati con le classi reali della variabile diagnosis (1 = Warthin, 2 = Adenoma pleomorfo, 3 = Carcinoma).
+
+Il Cluster 1 è dominato da casi maligni (13 carcinomi su 14 totali → 93%).
+
+Il Cluster 2 mostra una composizione mista, ma con maggiore prevalenza di benigni.
+
+Il Cluster 3 è anch’esso eterogeneo, con prevalenza di Warthin e adenomi pleomorfi (benigni).
+
+Accuratezza totale: 50.4% – il modello predice correttamente circa metà delle osservazioni.
+
+Kappa = 0.20 – accordo debole con la classificazione reale.
+
+Classe 1 (Warthin) ha alta sensibilità (97.8%) ma bassa specificità (18.6%), indicando forte tendenza al sovra-classificare come benigno.
+
+Classe 3 (Carcinoma) mostra buona specificità (98.9%) e PPV alto (92.9%), quindi quando predetto maligno, è quasi sempre corretto.
+
+Classe 2 (Adenoma pleomorfo) non viene mai predetta correttamente (sensibilità = 0), evidenziando limiti nella discriminazione di questa entità.
+
+Il clustering K-means ha evidenziato una certa capacità di separare i tumori maligni dai benigni, in particolare nel Cluster 1, fortemente arricchito di carcinomi. Tuttavia, l’accuratezza complessiva e la capacità di riconoscere adenomi pleomorfi risultano modeste. Ciò suggerisce che i biomarcatori infiammatori sistemici da soli non sono sufficienti per distinguere efficacemente tutte le classi istologiche, ma mostrano potenziale per identificare la malignità. Per migliorare le performance, sarebbe utile integrare questi indici con caratteristiche radiomiche o altre variabili cliniche.
+
+Si effettua un'analisi mediante curva ROC per analizzare singolarmente i parametri clinici e le features Radiomiche e valutare la loro capacità predittiva di differenziare la lesioni benigne da quella maligne.
+
+```{r roc_analysis}
+# --- Selezione variabili numeriche ---
+numerical_columns <- data %>% select_if(is.numeric) %>% colnames()
+
+if (length(numerical_columns) == 0) {
+  stop("Nessuna variabile numerica disponibile per l'analisi.")
+}
+
+# --- Test di Kruskal-Wallis ---
+kw_test <- function(var) {
+  if (all(is.na(data[[var]]))) return(NA)
+  result <- kruskal.test(data[[var]] ~ dati1$Grading)
+  return(result$p.value)
+}
+
+kw_results <- sapply(numerical_columns, kw_test)
+kw_results <- kw_results[!is.na(kw_results)]
+significant_vars <- names(kw_results[kw_results < 0.05])
+
+if (length(significant_vars) == 0) {
+  stop("Nessuna variabile significativa trovata nel test di Kruskal-Wallis.")
+}
+
+# --- ROC Analysis ---
+roc_analysis <- function(var) {
+  if (all(is.na(data[[var]]))) return(NULL)
+  roc_obj <- roc(dati1$Grading, as.numeric(data[[var]]), quiet = TRUE)
+  auc_value <- auc(roc_obj)
+  return(list(roc = roc_obj, auc = auc_value))
+}
+
+roc_results <- lapply(significant_vars, roc_analysis)
+names(roc_results) <- significant_vars
+roc_results <- roc_results[!sapply(roc_results, is.null)]
+
+# --- Filtra solo AUC > 0.65 ---
+selected_vars <- names(roc_results)[sapply(roc_results, 
+                                           function(x) x$auc > 0.65)]
+selected_roc_results <- roc_results[selected_vars]
+
+if (length(selected_roc_results) == 0) {
+  print("Nessuna variabile con AUC > 0.65 trovata.")
+} else {
+  cat("Variabili selezionate con AUC > 0.65:\n")
+  print(selected_vars)
+
+ roc_plots <- lapply(selected_vars, function(var) {
+  roc_obj <- selected_roc_results[[var]]$roc
+  auc_val <- round(selected_roc_results[[var]]$auc, 2)
+  
+  ggroc(roc_obj, size = 1.2, legacy.axes = TRUE) +
+    ggtitle(paste0("ROC - ", var, " (AUC = ", auc_val, ")")) +
+    theme_minimal(base_size = 5) +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 6),
+      axis.title = element_text(size = 5),
+      axis.text = element_text(size = 5)
+     ) +
+    labs(x = "1 - Specificità", y = "Sensibilità")
+})
+
+# Mostra in griglia
+do.call(grid.arrange, c(roc_plots, ncol = 2))
+
+}
+
+# --- Calcolo delle metriche diagnostiche ---
+dati1$Grading <- as.factor(dati1$Grading)
+levels(dati1$Grading) <- c("0", "1")
+
+metriche_da_variabile <- function(var_name) {
+  pred <- ifelse(as.numeric(data[[var_name]]) > median(data[[var_name]], 
+                                                       na.rm = TRUE), 1, 0)
+  actual <- as.numeric(as.character(dati1$Grading))
+
+  if (length(unique(pred)) < 2 || length(unique(actual)) < 2) {
+    return(rep(NA, 6))
+  }
+
+  roc_obj <- roc(actual, as.numeric(data[[var_name]]), quiet = TRUE)
+  auc_val <- auc(roc_obj)
+
+  cm <- confusionMatrix(factor(pred, levels = c(0,1)),
+                        factor(actual, levels = c(0,1)),
+                        positive = "1")
+
+  acc <- cm$overall["Accuracy"]
+  sens <- cm$byClass["Sensitivity"]
+  spec <- cm$byClass["Specificity"]
+  ppv  <- cm$byClass["Pos Pred Value"]
+  npv  <- cm$byClass["Neg Pred Value"]
+
+  return(setNames(round(c(
+    auc_val, acc, sens, spec, ppv, npv
+  ), 2), c("AUC", "Accuracy", "Sensitivity", "Specificity", "PPV", "NPV")))
+}
+
+# --- Costruzione della tabella ---
+metriche_matrix <- sapply(selected_vars, metriche_da_variabile)
+metriche_df <- as.data.frame(t(metriche_matrix))
+
+metriche_df$Variabile <- rownames(metriche_df)
+rownames(metriche_df) <- NULL
+
+# Riordina colonne
+metriche_df <- metriche_df[, c("Variabile", "AUC", "Accuracy", "Sensitivity", 
+                               "Specificity", "PPV", "NPV")]
+
+# Ordina per AUC decrescente
+metriche_df <- metriche_df[order(-metriche_df$AUC), ]
+
+knitr::kable(metriche_df,
+             caption = "Metriche diagnostiche per le variabili selezionate",
+             digits = 3)
+```
+L'analisi ROC ha identificato diverse variabili cliniche e radiomiche con potere discriminativo nella distinzione tra tumori benigni e maligni delle ghiandole salivari. Tra i biomarcatori infiammatori sistemici, NLR, PLR e SII hanno mostrato performance diagnostiche promettenti, con un valore dell’AUC pari a 0.75, 0.75 e 0.74 rispettivamente, accompagnati da sensibilità elevate (fino a 82% per PLR) e valori predittivi negativi (NPV) superiori all’85%, suggerendo una buona capacità di escludere malignità in caso di risultato negativo.
+
+Sebbene il biomarcatore SIRI abbia presentato un’AUC più modesta (0.69), esso ha comunque mantenuto una sensibilità accettabile (0.68) e un NPV pari a 0.85.
+
+Le variabili radiomiche, in particolare quelle derivate da trasformazioni wavelet
+(es. wavelet_LHL_gldm_LargeDependenceEmphasis), hanno dimostrato un potenziale diagnostico simile, con AUC comprese tra 0.65 e 0.69. Alcune di esse, come wavelet_LHL_gldm_LargeDependenceEmphasis e wavelet_LHL_gldm_LargeDependenceLowGrayLevelEmphasis, hanno raggiunto sensibilità superiori al 75%, indicando una discreta capacità di rilevare lesioni maligne.
+
+Tuttavia, il valore predittivo positivo (PPV) è risultato generalmente basso in tutte le variabili (<0.41), evidenziando una tendenza alla sovrastima della positività nei test, plausibilmente influenzata dallo sbilanciamento tra classi (più tumori benigni rispetto ai maligni nel campione).
+
+```{r logistic_regression}
+# Prepara dataset 
+dati <- cbind(data, Grading = dati1$Grading)
+
+# Divisione Training/Test
+set.seed(123)
+train_index <- createDataPartition(dati$Grading, p = 0.7, list = FALSE)
+train <- dati[train_index, ]
+test  <- dati[-train_index, ]
+
+set.seed(123)
+# Matrici predittori
+X_train <- as.matrix(train[, setdiff(names(train), "Grading")])
+y_train <- train$Grading
+
+X_test <- as.matrix(test[, setdiff(names(test), "Grading")])
+y_test <- test$Grading
+
+# Standardizzazione
+X_train_scaled <- scale(X_train)
+X_test_scaled  <- scale(X_test, 
+                        center = attr(X_train_scaled, "scaled:center"), 
+                        scale = attr(X_train_scaled, "scaled:scale"))
+
+# Regressione con validazione incrociata
+set.seed(123)
+cv_reg <- cv.glmnet(X_train_scaled, y_train, alpha = 1, family = "binomial")
+plot(cv_reg, main = "LASSO")
+lambda_best <- cv_reg$lambda.min
+cat("Lambda ottimale:", lambda_best, "\n")
+
+# Modello finale
+model_reg <- glmnet(X_train_scaled, y_train, alpha = 1, family = "binomial", lambda = lambda_best)
+
+# Predizione su test set
+pred_prob_test <- predict(model_reg, newx = X_test_scaled, type = "response")
+roc_test <- roc(y_test, pred_prob_test)
+auc_test <- auc(roc_test)
+cat("AUC sul test set:", round(auc_test, 3), "\n")
+
+#Soglia ottimale (Youden)
+coords_test <- coords(roc_test, x = "best", best.method = "youden", transpose = FALSE)
+soglia_youden <- coords_test$threshold
+cat("Soglia ottimale (Youden):", round(soglia_youden, 3), "\n")
+
+# Classificazione e Confusion Matrix
+pred_class_test <- ifelse(pred_prob_test >= soglia_youden, 1, 0)
+cm_reg <- confusionMatrix(
+  factor(pred_class_test, levels = c(0,1)),
+  factor(y_test, levels = c(0,1)),
+  positive = "1"
+)
+print(cm_reg)
+
+# Estrazione delle variabili robuste
+coef <- coef(model_reg)
+selected_vars_reg <- rownames(coef)[which(coef != 0)]
+selected_vars_reg <- selected_vars_reg[selected_vars_reg != "(Intercept)"]
+cat("Variabili selezionate:\n")
+print(selected_vars_reg)
+
+#Regressione logistica finale sul dataset intero con variabili selezionate 
+X_all<- scale(as.matrix(dati[, selected_vars_reg]))
+dati_finale<- data.frame(X_all, Grading = dati$Grading)
+
+mod_null <- glm(Grading ~ 1, family = "binomial", data = dati_finale)
+mod_full <- glm(Grading ~ ., family = "binomial", data = dati_finale)
+mod_both <- stepAIC(mod_null, scope = list(lower = mod_null, upper = mod_full), direction = "both", trace = FALSE)
+
+summary(mod_both)
+
+pred_prob <- predict(mod_both, data = dati_finale, type = "response")
+roc_obj <- roc(dati$Grading, pred_prob)
+auc_val <- auc(roc_obj)
+
+# Classificazione con soglia Youden
+roc_coords <- coords(roc_obj, x = "best", best.method = "youden", transpose = FALSE)
+soglia_youden <- roc_coords$threshold
+pred_class <- ifelse(pred_prob >= soglia_youden, 1, 0)
+actual_class <- as.numeric(as.character(dati_finale$Grading))
+
+cm_glm <- confusionMatrix(
+  factor(pred_class, levels = c(0,1)),
+  factor(actual_class, levels = c(0,1)),
+  positive = "1"
+)
+
+# Metriche finali
+accuracy     <- cm_glm$overall["Accuracy"]
+sensitivity  <- cm_glm$byClass["Sensitivity"]
+specificity  <- cm_glm$byClass["Specificity"]
+ppv          <- cm_glm$byClass["Pos Pred Value"]
+npv          <- cm_glm$byClass["Neg Pred Value"]
+
+metriche_glm <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", 
+              "Valore Predittivo Negativo", "AUC"),
+  Valore = round(c(accuracy, sensitivity, specificity, ppv, npv, auc_val), 3)
+)
+
+knitr::kable(metriche_glm, digits = 3, caption = "Metriche diagnostiche su test set - Modello LASSO")
+
+# Plot curva ROC
+plot(roc_obj, col = "#2C3E50", lwd = 1, 
+     main = paste("ROC Curve - AUC:", round(auc_val, 3)))
+abline(a = 0, b = 1, lty = 2, col = "gray")
+
+
+# Valutazione rispetto a Non-Informative Error
+valuta_modello_vs_nie <- function(predetti, veri) {
+  accuratezza <- mean(predetti == veri)
+  classe_magg <- names(which.max(table(veri)))
+  nie_accuracy <- mean(veri == classe_magg)
+  n_successi <- sum(predetti == veri)
+  n_tot <- length(veri)
+  test <- binom.test(n_successi, n_tot, p = nie_accuracy, alternative = "greater")
+  cat("\n--- Valutazione Accuratezza vs Non-Informative Error ---\n")
+  cat("Accuratezza modello:", round(accuratezza, 3), "\n")
+  cat("Accuratezza Non-Informative:", round(nie_accuracy, 3), "\n")
+  cat("P-value test binomiale:", format.pval(test$p.value, digits = 4), "\n")
+  if (test$p.value < 0.05) {
+    cat("Il modello è significativamente migliore del baseline.\n")
+  } else {
+    cat("Il modello NON è significativamente migliore del baseline.\n")
+  }
+  return(invisible(test))
+}
+
+valuta_modello_vs_nie(pred_class, actual_class)
+
+```
+
+L’applicazione della regressione LASSO produce un modello parsimonioso ma robusto per la classificazione del grading istologico.
+
+Tramite validazione incrociata sul training set, è stato identificato il valore ottimale del parametro di penalizzazione a lambda = 0.026. Con questo valore, LASSO ha selezionato 24 variabili con coefficienti diversi da zero, tra cui:
+
+Variabili cliniche:
+
+Variabili selezionate:
+ [1] "NLR"                                             
+ [2] "PLR"                                             
+                                
+Variabili radiomiche:
+
+[3] "original_shape_Maximum3DDiameter"                    
+ [4] "original_glcm_JointAverage"                          
+ [5] "original_glrlm_RunLengthNonUniformityNormalized"     
+ [6] "original_ngtdm_Contrast"                             
+ [7] "wavelet_HLL_gldm_SmallDependenceEmphasis"            
+ [8] "wavelet_HLL_glcm_Id"                                 
+ [9] "wavelet_LHL_gldm_LargeDependenceEmphasis"            
+[10] "wavelet_LHL_glcm_ClusterTendency"                    
+[11] "wavelet_LHL_glszm_ZonePercentage"                    
+[12] "wavelet_LHH_glcm_SumEntropy"                         
+[13] "wavelet_LHH_glcm_ClusterTendency"                    
+[14] "wavelet_LLH_gldm_SmallDependenceEmphasis"            
+[15] "wavelet_LLH_gldm_LargeDependenceLowGrayLevelEmphasis"
+[16] "wavelet_LLH_glszm_ZonePercentage"                    
+[17] "wavelet_HLH_glcm_JointAverage"                       
+[18] "wavelet_HLH_firstorder_Entropy"                      
+[19] "wavelet_HHH_gldm_LargeDependenceEmphasis"            
+[20] "wavelet_HHH_glszm_SmallAreaHighGrayLevelEmphasis"    
+[21] "wavelet_HHH_glszm_SmallAreaLowGrayLevelEmphasis"     
+[22] "wavelet_HHL_glszm_LargeAreaLowGrayLevelEmphasis"     
+[23] "wavelet_LLL_glcm_JointAverage"                       
+[24] "wavelet_LLL_glcm_InverseVariance"          
+
+Tali caratteristiche descrivono l’eterogeneità strutturale e la complessità interna delle lesioni tumorali su diverse scale di trasformazione, ed evidenziano pattern coerenti con l’aggressività tumorale.
+
+Queste caratteristiche radiomiche riflettono l’eterogeneità strutturale e la complessità interna delle lesioni, elementi chiave per la caratterizzazione istologica.
+
+L'AUC sul test set dell' LASSO è risultata 0.683. Il modello LASSO mostra una scarsa capacità predittiva.
+
+La successiva regressione logistica (stepwise AIC) costruita su queste variabili ha confermato la significatività statistica di diversi predittori:
+
+NLR (p =  7.18e-05),
+
+wavelet_LHL_gldm_LargeDependenceEmphasis (p = 0.00708),
+
+wavelet_HHL_glszm_LargeAreaLowGrayLevelEmphasis (p = 0.00357),
+
+wavelet_LHH_glcm_ClusterTendency  (p = 0.00465),    
+
+original_shape_Maximum3DDiameter  (p = 0.01594),                
+
+Il modello finale presenta una devianza residua pari a 69.96 con un AIC = 83.96, evidenziando una buona capacità predittiva e parsimonia.
+
+Accuratezza	0.8872
+
+Sensibilità	0.821
+
+Specificità	0.888
+
+Valore Predittivo Positivo	0.697
+
+Valore Predittivo Negativo	0.940
+
+AUC	0.914
+
+La curva ROC evidenzia un’elevata capacità discriminativa; inoltre la valutazione rispetto al modello non informativo ha restituito un p-value <0.05, suggerendo che il modello è significativamente migliore del baseline.
+
+
+Ora testiamo approcci con alberi decisionali prima utilizzando le sole variabili cliniche e successivamente utilizzando la combinazione di variabili cliniche e variabili radiomiche.
+
+Per bilanciare le due classi (benigne vs maligne), si è fatto uso del pacchetto ROSE, che consente una generazione sintetica di osservazioni per riequilibrare il dataset.
+
+Successivamente, i dati sono stati suddivisi in:
+
+Training + validation set (70%): utilizzato con validazione incrociata (k fold = 10)
+
+Test set (30%): per valutare le performance finali del modello.
+
+```{r data_split}
+# Modelli di Machine Learning
+# Stratificazione del dataset in Training+Validation e Test Set
+set.seed(123)
+dati_clinici_com <- cbind(dati_clinici, Grading = as.factor(dati1$Grading))
+
+# Assicurati che il target sia fattoriale
+dati_clinici_com$Grading <- as.factor(dati_clinici_com$Grading)
+
+# Applica ROSE per bilanciare le classi
+set.seed(123)
+dati_rose <- ROSE(Grading ~ ., data = dati_clinici_com, seed = 123)$data
+
+# Controlla il bilanciamento prima e dopo
+cat("Distribuzione classi - PRIMA:\n")
+print(table(dati_clinici_com$Grading))
+
+cat("\nDistribuzione classi - DOPO ROSE:\n")
+print(table(dati_rose$Grading))
+
+# Divisione Training/Test
+set.seed(123)
+train_index <- createDataPartition(dati_rose$Grading, p = 0.7, list = FALSE)
+train <- dati_rose[train_index, ]
+test <- dati_rose[-train_index, ]
+
+```
+
+```{r model_training}
+# Modelli di Classificazione solo con variabili cliniche
+# Modello CART (Decision Tree)
+
+# Si è testato il valore di minsplit 10, 15 e 20 e si ottengono le 
+# prestaizoni migliori con minsplit = 15
+
+minsplit <- 15
+cart_model_c <- rpart(train$Grading ~ ., 
+                    data = train, 
+                    method = "class", 
+                    control = rpart.control(
+                      minsplit =minsplit,            
+                      # numero minimo di osservazioni in un nodo
+                      minbucket = round(minsplit/3), 
+                      # minimo osservazioni per nodo terminale
+                      cp = 0,                        
+                      # complexity parameter 
+                      maxcompete = 4,                
+                      # split alternativi mostrati
+                      maxsurrogate = 5,              
+                      # massimo surrogate split
+                      usesurrogate = 2,              
+                      # usa surrogate se split principale ha NA
+                      xval = 10,                     
+                      # cross-validation folds
+                      surrogatestyle = 0, 
+                      maxdepth = 10                  
+                      # profondità massima dell'albero
+                    ))
+cart_model_c[["cptable"]]
+plotcp(cart_model_c)
+rpart.plot(cart_model_c)
+
+cptab_c <- cart_model_c$cptable
+min_cp_c <- cptab_c[which.min(cptab_c[, "xerror"]), "CP"]
+
+# Il valore minimo di X Relative Error corrisponde a cp = min_cp, 
+# per cui l’albero potato sarà
+
+cart_model_c.prune <- prune(cart_model_c, cp = min_cp_c)
+rpart.plot::rpart.plot(cart_model_c.prune)
+
+# Predizione sul train set
+predetto_train <- predict(cart_model_c.prune, newdata = train, type = "class")
+actual_train   <- as.factor(train$Grading)
+
+# Predizione sul test set
+predetto_test <- predict(cart_model_c.prune, newdata = test, type = "class")
+actual_test   <- as.factor(test$Grading)
+
+valuta_modello_vs_nie(predetto_test, actual_test)
+
+# Errori
+train_error_c <- mean(predetto_train != actual_train)
+test_error_c  <- mean(predetto_test != actual_test)
+
+errori_modelli <- data.frame(
+  Modello = "CART_clinico",
+  Train_Error = round(train_error_c, 3),
+  Test_Error  = round(test_error_c, 3)
+)
+
+# Matrice di confusione
+cm_cart <- confusionMatrix(predetto_test, actual_test , positive = "1") 
+
+# Estrazione delle metriche
+accuracy     <- cm_cart$overall["Accuracy"]
+sensitivity  <- cm_cart$byClass["Sensitivity"]
+specificity  <- cm_cart$byClass["Specificity"]
+ppv          <- cm_cart$byClass["Pos Pred Value"]
+npv          <- cm_cart$byClass["Neg Pred Value"]
+balanced_acc <- cm_cart$byClass["Balanced Accuracy"]
+
+# Costruzione tabella dei risultati
+metriche_cm_cart <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", 
+              "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(accuracy, sensitivity, specificity, ppv, npv, balanced_acc), 3)
+)
+print(metriche_cm_cart, row.names = FALSE)
+
+```
+
+L’analisi tramite modello ad albero decisionale (CART) ha permesso di valutare il potere predittivo della variabile infiammatoria SIRI nella classificazione preoperatoria delle lesioni delle ghiandole salivari. L’albero generato, a seguito di potatura basata sul parametro di complessità ottimale (cp), ha selezionato SIRI come unico predittore discriminante, con due soglie rilevanti: 1.3 e 0.41.
+
+Il diagramma ad albero mostra che valori di SIRI >= 1.3 sono fortemente associati a neoplasie maligne (con probabilità stimata dell'83%), mentre valori intermedi (0.41 <= SIRI < 1.3) suggeriscono una probabilità moderata di malignità (80%), e valori inferiori a 0.41 sono fortemente associati a lesioni benigne (probabilità del 94%).
+
+Le metriche diagnostiche ottenute sul dataset di test evidenziano una buona performance del modello, con:
+
+Accuratezza: 82.4%
+
+Sensibilità: 87.5% (capacità di individuare correttamente le lesioni maligne)
+
+Specificità: 77.8% (capacità di identificare correttamente le lesioni benigne)
+
+Valore Predittivo Positivo (PPV): 77.8%
+
+Valore Predittivo Negativo (NPV): 87.5%
+
+Accuratezza bilanciata: 82.6%
+
+Questi risultati indicano che il modello basato su SIRI è particolarmente efficace nell’identificare correttamente i casi maligni (alta sensibilità e NPV), rappresentando un utile strumento di supporto alla diagnosi preoperatoria. La semplicità dell’albero generato lo rende interpretabile e potenzialmente applicabile nella pratica clinica, soprattutto in contesti dove l’accesso a tecniche avanzate è limitato.
+
+```{r bias-trade-off}
+# Sequenze di percentuali di training set da usare
+fractions <- seq(0.1, 1.0, by = 0.1)
+
+# Inizializza vettori per errori
+train_error <- numeric(length(fractions))
+test_error  <- numeric(length(fractions))
+
+set.seed(123)
+
+for (i in seq_along(fractions)) {
+  frac <- fractions[i]
+  
+  # Sottocampione del training set
+  idx <- sample(1:nrow(train), size = round(frac * nrow(train)))
+  train_frac <- train[idx, ]
+  
+  # Addestra il modello SOLO sul sottoinsieme!
+  model_frac <- rpart(Grading ~ ., data = train_frac, method = "class", control = rpart.control(cp = 0))
+  
+  # Predizioni
+  pred_train <- predict(model_frac, newdata = train_frac, type = "class")
+  pred_test  <- predict(model_frac, newdata = test, type = "class")
+  
+  # Errori
+  train_error[i] <- mean(pred_train != train_frac$Grading)
+  test_error[i]  <- mean(pred_test  != test$Grading)
+}
+
+# Plot come prima
+df_err <- data.frame(
+  Frazione = fractions * 100,
+  Train_Error = train_error,
+  Test_Error = test_error
+)
+
+ggplot(df_err, aes(x = Frazione)) +
+  geom_line(aes(y = Train_Error, color = "Train Error"), size = 1.2) +
+  geom_line(aes(y = Test_Error, color = "Test Error"), size = 1.2) +
+  geom_point(aes(y = Train_Error, color = "Train Error"), size = 2) +
+  geom_point(aes(y = Test_Error, color = "Test Error"), size = 2) +
+  labs(title = "Learning Curve - Bias/Varianza",
+       x = "Percentuale di dati di training",
+       y = "Errore di classificazione") +
+  scale_color_manual(values = c("Train Error" = "blue", "Test Error" = "red")) +
+  theme_minimal()
+
+```
+
+Per valutare la capacità predittiva del modello CART in questo contesto clinico, è stata tracciata una learning curve, che rappresenta l’andamento dell’errore di classificazione al variare della quantità di dati di addestramento. La curva mostra due comportamenti distinti:
+
+Errore sul training set inizialmente basso con piccoli sottoinsiemi di dati, ma soggetto a oscillazioni marcate, indicativo di elevata varianza (overfitting locale). All’aumentare del numero di osservazioni, l’errore tende a stabilizzarsi su valori più coerenti.
+
+Errore sul test set stabile e relativamente elevato, con uno scostamento costante rispetto all’errore di training, suggerendo la presenza di bias residuo, ossia una limitata capacità del modello di generalizzare.
+
+Il divario tra le due curve evidenzia che il modello, nella sua configurazione attuale, presenta un compromesso subottimale tra bias e varianza, con una propensione all’overfitting nei piccoli campioni e un modesto miglioramento della generalizzazione all’aumentare dei dati.
+
+L’analisi della curva di apprendimento ha evidenziato un chiaro trade-off bias-varianza nel modello ad albero di decisione. In particolare, si osserva un'elevata varianza nei piccoli campioni e una discreta tendenza al bias nei set più ampi, con uno scarto costante tra errore di training e test. Questo comportamento suggerisce che, sebbene il modello sia in grado di apprendere relazioni presenti nei dati, fatica a generalizzare correttamente. Per tale motivo, si raccomanda l’adozione di approcci ensemble (es. Random Forest o Boosting) per ottenere prestazioni più stabili e affidabili nel contesto clinico.
+
+```{r training1}
+# Modello Conditional Inference Tree
+# Al variare di minsplit non cambia il modello
+minsplit <- 20
+cit_model_c <- ctree(
+  Grading ~ ., 
+  data = train,
+  controls = ctree_control(
+    minsplit = minsplit <- minsplit,        
+    minbucket = minsplit <- minsplit/3,       
+    maxdepth = 10,        
+    testtype = "Bonferroni"  # Tipo di test: "Bonferroni", "MonteCarlo", "Univariate"
+  )
+)
+
+# Visualizzazione
+plot(cit_model_c,
+     type = "simple",       # Mostra la variabile, la soglia e il p-value
+     inner_panel = node_inner,      # Mostra il p-value nel nodo interno
+     terminal_panel = node_barplot, # Mostra il barplot della variabile target
+     drop_terminal = FALSE,
+     main = "Albero di Decisione CIDT")
+
+# Predizione sul train set
+predetto_train<- predict(cit_model_c, newdata = train, type = "response")
+
+# Predizione sul test set
+pred_test <- predict(cit_model_c, newdata = test, type = "response")
+
+valuta_modello_vs_nie(pred_test, actual_test)
+
+# Errori
+train_error_c <- mean(predetto_train != actual_train)
+test_error_c  <- mean(predetto_test != actual_test)
+
+errori_modelli <- data.frame(
+  Modello = "CIT_clinico",
+  Train_Error = round(train_error_c, 3),
+  Test_Error  = round(test_error_c, 3)
+)
+
+# Matrice di confusione
+cm_cit  <- confusionMatrix(pred_test, test$Grading)
+
+# Estrazione delle metriche
+accuracy     <- cm_cit$overall["Accuracy"]
+sensitivity  <- cm_cit$byClass["Sensitivity"]
+specificity  <- cm_cit$byClass["Specificity"]
+ppv          <- cm_cit$byClass["Pos Pred Value"]
+npv          <- cm_cit$byClass["Neg Pred Value"]
+balanced_acc <- cm_cit$byClass["Balanced Accuracy"]
+
+# Costruzione tabella dei risultati
+metriche_cm_cit <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(accuracy, sensitivity, specificity, ppv, npv, balanced_acc), 3)
+)
+
+# Stampa ordinata della tabella
+print(metriche_cm_cit, row.names = FALSE)
+```
+Il modello di classificazione rappresentato nell’albero di decisione CIDT utilizza il valore del rapporto neutrofili/linfociti (NLR) come unica variabile discriminante per predire il grado istologico delle lesioni salivari. L’analisi ha identificato un valore soglia di NLR pari a 3.165, oltre il quale le lesioni sono considerate con elevata probabilità maligne.
+
+Questi risultati evidenziano un modello molto sensibile (sensibilità = 100%), capace cioè di identificare correttamente tutti i casi maligni. Inoltre, il valore predittivo negativo perfetto (NPV = 1.00) indica che in presenza di un NLR <= 3.165 la probabilità che la lesione sia benigna è altissima. La specificità, pur inferiore (0.62), suggerisce una certa tendenza alla classificazione falsa positiva, ma bilanciata dalla forte capacità di esclusione diagnostica.
+
+```{r training2}
+#Bagging CART
+minsplit = max(10, round(nrow(train) * 0.05))
+nbagg = 15 # all'aumentare di nbagg la performance decresce
+
+cat("Bagging in corso...\n")
+start_time <- Sys.time()
+
+bag_model <- bagging(
+  Grading ~ ., 
+  data = train, 
+  nbagg = nbagg, 
+  coob = TRUE,
+  control = rpart.control(
+    minsplit = minsplit,
+    minbucket = minsplit/3,
+    cp = 0,
+    maxdepth = 5,
+    xval = 0
+  )
+)
+
+end_time <- Sys.time()
+cat("Completato in", round(difftime(end_time, start_time, units = "secs"), 2), "secondi\n")
+
+raw_pred <- predict(bag_model, newdata = test, type = "class")
+
+if (is.list(raw_pred) && "class" %in% names(raw_pred)) {
+  pred_bag <- as.factor(raw_pred$class)
+} else if (is.matrix(raw_pred) || is.data.frame(raw_pred)) {
+  pred_bag <- as.factor(as.vector(raw_pred[,1]))
+} else if (is.atomic(raw_pred)) {
+  pred_bag <- as.factor(raw_pred)
+} else {
+  stop("Formato imprevisto per le predizioni.")
+}
+
+# Grading reale
+actual_bag <- as.factor(test$Grading)
+
+# Calcolo errori di classificazione
+pred_train_bag <- predict(bag_model, newdata = train, type = "class")
+actual_train_bag <- as.factor(train$Grading)
+
+# Allinea livelli anche per il training set
+all_levels_train <- union(levels(pred_train_bag), levels(actual_train_bag))
+pred_train_bag <- factor(pred_train_bag, levels = all_levels_train)
+actual_train_bag <- factor(actual_train_bag, levels = all_levels_train)
+
+# Allinea livelli test
+all_levels <- union(levels(pred_bag), levels(actual_bag))
+pred_bag <- factor(pred_bag, levels = all_levels)
+actual_bag <- factor(actual_bag, levels = all_levels)
+
+valuta_modello_vs_nie(pred_bag, actual_bag)
+
+# Check lunghezze
+stopifnot(length(pred_bag) == length(actual_bag))
+
+# Errori
+train_error_bag <- mean(pred_train_bag != actual_train_bag)
+test_error_bag  <- mean(pred_bag != actual_bag)
+
+# Confusion Matrix
+cm_bag <- confusionMatrix(pred_bag, actual_bag, positive = "1")
+
+# Metriche
+metrics_bag_c <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(
+    cm_bag$overall["Accuracy"],
+    cm_bag$byClass["Sensitivity"],
+    cm_bag$byClass["Specificity"],
+    cm_bag$byClass["Pos Pred Value"],
+    cm_bag$byClass["Neg Pred Value"],
+    cm_bag$byClass["Balanced Accuracy"]
+  ), 3)
+)
+
+# Output
+print(metrics_bag_c, row.names = FALSE)
+
+
+```
+
+Il modello bagging non incrementa le performance diagnostiche.
+
+```{r training3}
+# Modello Random Forest
+# Definizione dei valori da testare
+mtry_seq <- 1:(ncol(train) - 1)
+ntree_seq <- c(10, 100, 150, 200, 300)
+
+# Inizializza matrici per errori
+oob_err_mat <- matrix(NA, nrow = length(mtry_seq), ncol = length(ntree_seq))
+test_err_mat <- matrix(NA, nrow = length(mtry_seq), ncol = length(ntree_seq))
+
+rownames(oob_err_mat) <- paste0("mtry_", mtry_seq)
+colnames(oob_err_mat) <- paste0("ntree_", ntree_seq)
+rownames(test_err_mat) <- rownames(oob_err_mat)
+colnames(test_err_mat) <- colnames(oob_err_mat)
+
+set.seed(123)
+for (i in seq_along(mtry_seq)) {
+  for (j in seq_along(ntree_seq)) {
+    rf <- randomForest(
+      Grading ~ .,
+      data = train,
+      mtry = mtry_seq[i],
+      ntree = ntree_seq[j],
+      importance = FALSE
+    )
+    
+    # Salva errore OOB
+    oob_err_mat[i, j] <- rf$err.rate[ntree_seq[j], "OOB"]
+    
+    # Predizione test
+    pred <- predict(rf, newdata = test)
+    test_err_mat[i, j] <- mean(pred != test$Grading)
+  }
+}
+
+# Converti in formato long per ggplot
+oob_long <- melt(oob_err_mat, varnames = c("mtry", "ntree"), value.name = "OOB_Error")
+test_long <- melt(test_err_mat, varnames = c("mtry", "ntree"), value.name = "Test_Error")
+
+# Heatmap Errore di Test
+ggplot(test_long, aes(x = ntree, y = mtry, fill = Test_Error)) +
+  geom_tile() +
+  scale_fill_gradient(low = "#F7FCF5", high = "#00441B") +
+  labs(title = "Errore di Classificazione (Test Set)", x = "ntree", y = "mtry") +
+  theme_minimal()
+
+# Trova la posizione con errore OOB minimo
+best_idx <- which(oob_err_mat == min(oob_err_mat, na.rm = TRUE), arr.ind = TRUE)
+
+# Estrai valori corrispondenti di mtry e ntree
+best_mtry <- mtry_seq[best_idx[1]]
+best_ntree <- ntree_seq[best_idx[2]]
+
+# Stampa il risultato
+cat("  Miglior combinazione (errore OOB minimo):\n")
+cat("   → mtry =", best_mtry, "\n")
+cat("   → ntree =", best_ntree, "\n")
+cat("   → errore OOB =", round(min(oob_err_mat, na.rm = TRUE), 4), "\n")
+
+set.seed(123)
+rf_model <- randomForest(
+  Grading ~ ., 
+  data = train, 
+  ntree = best_ntree,    
+  mtry = best_mtry,  
+  importance = TRUE
+)
+
+# Predizione sul test set
+pred_rf <- predict(rf_model, newdata = test, type = "class")
+
+# Allinea livelli
+levels_comb <- union(levels(pred_rf), levels(test$Grading))
+pred_rf <- factor(pred_rf, levels = levels_comb)
+test$Grading <- factor(test$Grading, levels = levels_comb)
+
+pred_train_rf <- predict(rf_model, newdata = train, type = "class")
+actual_train_rf <- train$Grading
+actual_test_rf  <- test$Grading
+
+train_error_rf <- mean(pred_train_rf != actual_train_rf)
+test_error_rf  <- mean(pred_rf != actual_test_rf)
+
+
+# Plot errori e importanza
+plot(rf_model, col = "#A20045", main = "Random Forest - OOB Error")
+varImpPlot(rf_model, 
+           main = "Importanza delle Variabili (Gini)", 
+           pch = 19, 
+           col = "#A20045")
+
+importance(rf_model, type = 1)  # Classificazione: decremento accuracy
+importance(rf_model, type = 2)  # Classificazione: decremento Gini
+
+valuta_modello_vs_nie(pred_rf, actual_test_rf)
+
+# Matrice di confusione
+cm_rf <- confusionMatrix(pred_rf, test$Grading, positive = "1")
+
+# Metriche
+metrics_rf_c <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(
+    cm_rf$overall["Accuracy"],
+    cm_rf$byClass["Sensitivity"],
+    cm_rf$byClass["Specificity"],
+    cm_rf$byClass["Pos Pred Value"],
+    cm_rf$byClass["Neg Pred Value"],
+    cm_rf$byClass["Balanced Accuracy"]
+  ), 3)
+)
+
+cat("\n Metriche - Random Forest\n")
+print(metrics_rf_c, row.names = FALSE)
+
+```
+
+L’algoritmo Random Forest ha mostrato ottime performance nel classificare correttamente tumori benigni e maligni delle ghiandole salivari, con un errore OOB minimo pari a 0.241. Questo valore rappresenta una stima dell’errore commesso dal modello durante la classificazione di nuovi dati non visti in fase di training, risultando quindi particolarmente utile per valutare la generalizzabilità del modello.
+
+Le metriche di valutazione del modello Random Forest sono le seguenti:
+
+Accuratezza: 0.882
+
+Sensibilità: 0.875
+
+Specificità: 0.889
+
+Valore Predittivo Positivo (PPV): 0.875
+
+Valore Predittivo Negativo (NPV): 0.889
+
+Accuratezza Bilanciata: 0.882
+
+Questi valori evidenziano un bilanciamento eccellente tra la capacità del modello di riconoscere correttamente i casi maligni (alta sensibilità) e quelli benigni (alta specificità), con un PPV e NPV molto elevati, indice di robustezza diagnostica anche in condizioni cliniche reali.
+
+Dall’analisi dell’importanza delle variabili, emerge che tra gli indici infiammatori sistemici:
+
+SIRI è risultato il più rilevante, con il maggiore contributo sia alla riduzione dell’errore (MeanDecreaseAccuracy = 11.59) sia alla purezza dei nodi (MeanDecreaseGini = 16.18).
+Seguono NLR, PLR e SII, con valori via via decrescenti di importanza.
+
+Questi risultati suggeriscono che SIRI e NLR sono i predittori più informativi nel contesto del modello Random Forest, rafforzando l’evidenza precedentemente emersa anche nei modelli di regressione logistica e alberi decisionali.
+
+Il modello Random Forest ha dimostrato ottime capacità predittive e di generalizzazione, risultando particolarmente utile nella fase preoperatoria per distinguere tra tumori benigni e maligni delle ghiandole salivari. L’importanza assegnata a biomarcatori infiammatori sistemici (in particolare SIRI) sottolinea la potenzialità clinica di integrare semplici esami ematochimici nel processo decisionale, soprattutto in combinazione con metodiche radiomiche.
+
+```{r training4}
+# Boosting CART
+# Parametri da testare
+depth_seq <- c(2, 4, 6, 8, 10)
+mfinal_seq <- c(100, 150, 200, 250)
+
+# Matrici errore
+train_err_mat <- matrix(NA, nrow = length(depth_seq), ncol = length(mfinal_seq))
+test_err_mat <- matrix(NA, nrow = length(depth_seq), ncol = length(mfinal_seq))
+
+rownames(train_err_mat) <- paste0("depth_", depth_seq)
+colnames(train_err_mat) <- paste0("mfinal_", mfinal_seq)
+rownames(test_err_mat) <- rownames(train_err_mat)
+colnames(test_err_mat) <- colnames(train_err_mat)
+
+set.seed(123)
+for (i in seq_along(depth_seq)) {
+  for (j in seq_along(mfinal_seq)) {
+    model_boost <- boosting(
+      Grading ~ ., 
+      data = train, 
+      mfinal = mfinal_seq[j],
+      control = rpart.control(maxdepth = depth_seq[i])
+    )
+    
+    # Errore su training set
+    train_pred <- predict(model_boost, newdata = train)
+    train_err_mat[i, j] <- mean(train_pred$class != train$Grading)
+    
+    # Errore su test set
+    test_pred <- predict(model_boost, newdata = test)
+    test_err_mat[i, j] <- mean(test_pred$class != test$Grading)
+  }
+}
+
+test_long <- melt(test_err_mat, varnames = c("depth", "mfinal"), value.name = "Test_Error")
+
+ggplot(test_long, aes(x = mfinal, y = depth, fill = Test_Error)) +
+  geom_tile() +
+  scale_fill_gradient(low = "#F7FCF5", high = "#00441B") +
+  labs(title = "Errore di Classificazione - Boosting", x = "mfinal", y = "maxdepth") +
+  theme_minimal()
+
+best_idx <- which(test_err_mat == min(test_err_mat, na.rm = TRUE), arr.ind = TRUE)
+best_depth <- depth_seq[best_idx[1]]
+best_mfinal <- mfinal_seq[best_idx[2]]
+
+cat(" Migliore combinazione (errore TEST minimo):\n")
+cat("   → maxdepth =", best_depth, "\n")
+cat("   → mfinal =", best_mfinal, "\n")
+
+# Modello finale con parametri ottimali
+boost_final <- boosting(
+  Grading ~ ., 
+  data = train, 
+  mfinal = best_mfinal, 
+  control = rpart.control(maxdepth = best_depth)
+)
+
+# Predizione
+pred_boost <- predict(boost_final, newdata = test)
+pred_boost_class <- factor(pred_boost$class, levels = levels(test$Grading))
+
+# Predizione su training set
+pred_boost_train <- predict(boost_final, newdata = train)
+pred_train_class <- factor(pred_boost_train$class, levels = levels(train$Grading))
+
+# Grading reale
+actual_train_boost <- train$Grading
+actual_test_boost <- test$Grading
+
+# Calcolo errori
+train_error_boost <- mean(pred_train_class != actual_train_boost)
+test_error_boost <- mean(pred_boost_class != actual_test_boost)
+
+valuta_modello_vs_nie(pred_boost_class, actual_test_boost)
+
+# Matrice di confusione
+library(caret)
+cm_boost <- confusionMatrix(pred_boost_class, test$Grading, positive = "1")
+
+# Metriche
+metrics_boost_c <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(
+    cm_boost$overall["Accuracy"],
+    cm_boost$byClass["Sensitivity"],
+    cm_boost$byClass["Specificity"],
+    cm_boost$byClass["Pos Pred Value"],
+    cm_boost$byClass["Neg Pred Value"],
+    cm_boost$byClass["Balanced Accuracy"]
+  ), 3)
+)
+
+cat("\n Metriche - Boosting\n")
+print(metrics_boost_c, row.names = FALSE)
+
+```
+
+I risultati con la migliore combinazione del Boosting CART sono analoghi a quelli riportati dal Random Forest.
+
+Si vuole, a questo punto, valutare la capacità predittiva delle variabili cliniche combinate a quelle radiomiche. 
+
+Si utilizza il modello CART e il modello Random Forest. 
+
+```{r Preparazione del dataset: unione dati clinici + radiomici}
+# Costruisci dati_completi finali
+# dati_completi <- cbind(dati, Grading = y)
+dati_completi <- cbind(dati_clinici, dati2, Grading = dati1$Grading)
+
+# Applico ROSE come prima pper il bilanciamento del dataset
+# Assicurati che il target sia fattoriale
+dati_completi$Grading <- as.factor(dati_completi$Grading)
+
+# Applica ROSE per bilanciare le classi
+set.seed(123)
+dati_rose <- ROSE(Grading ~ ., data = dati_completi, seed = 123)$data
+
+# Controlla il bilanciamento prima e dopo
+cat("Distribuzione classi - PRIMA:\n")
+print(table(dati_completi$Grading))
+
+cat("\nDistribuzione classi - DOPO ROSE:\n")
+print(table(dati_rose$Grading))
+
+# Divisione Training/Test
+set.seed(123)
+train_index <- createDataPartition(dati_rose$Grading, p = 0.7, list = FALSE)
+train <- dati_rose[train_index, ]
+test <- dati_rose[-train_index, ]
+```
+
+
+
+```{r Modello CART dati clinici + radiomici}
+minsplit <-15
+cart_model <- rpart(train$Grading ~ ., 
+                    data = train, 
+                    method = "class", 
+                    control = rpart.control(
+                      minsplit =minsplit,
+                      minbucket= minsplit/3,
+                      cp = 0,
+                      maxcompete = 4,
+                      maxsurrogate = 5,
+                      usesurrogate = 2,
+                      xval = 10,
+                      surrogatestyle = 0, 
+                      maxdepth = 10
+                    ))
+cart_model[["cptable"]]
+# plotcp(cart_model)
+# rpart.plot(cart_model)
+
+cptab <- cart_model$cptable
+min_cp <- cptab[which.min(cptab[, "xerror"]), "CP"]
+
+cart_model.prune <- prune(cart_model, cp = min_cp)
+rpart.plot::rpart.plot(cart_model.prune)
+
+predetto_test <- predict(cart_model, newdata = test, type = "class")
+actual_test   <- as.factor(test$Grading)
+
+valuta_modello_vs_nie(predetto_test, actual_test )
+
+cm_cart_cr <- confusionMatrix(predetto_test, actual_test , positive = "1") 
+
+accuracy     <- cm_cart_cr$overall["Accuracy"]
+sensitivity  <- cm_cart_cr$byClass["Sensitivity"]
+specificity  <- cm_cart_cr$byClass["Specificity"]
+ppv          <- cm_cart_cr$byClass["Pos Pred Value"]
+npv          <- cm_cart_cr$byClass["Neg Pred Value"]
+balanced_acc <- cm_cart_cr$byClass["Balanced Accuracy"]
+
+metriche_cm_cart_cr <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(accuracy, sensitivity, specificity, ppv, npv, balanced_acc), 3)
+)
+print(metriche_cm_cart_cr, row.names = FALSE)
+```
+
+I risultati ottenuti con il modello ad albero di classificazione basato su variabili radiomiche evidenziano buone performance predittive nella distinzione tra tumori benigni e maligni delle ghiandole salivari.
+
+Il modello ad albero decisionale CART, costruito utilizzando un set esteso di variabili radiomiche, ha mostrato ottime performance diagnostiche nella classificazione delle lesioni delle ghiandole salivari come benigne o maligne. Attraverso un processo di potatura basato sul parametro di complessità (cp), è stato selezionato un albero con 3 split, che ha permesso di ridurre l’errore di cross-validazione (xerror) da un iniziale 1.200 (albero nullo) a un valore minimo di 0.225, segnalando un eccellente bilanciamento tra bias e varianza.
+
+La struttura dell’albero risulta interpretabile e permette di individuare regioni decisionali chiare, basate sulla combinazione di pochi descrittori derivati da immagini MRI.
+
+L’albero finale, semplice ma efficace, ha utilizzato esclusivamente variabili radiomiche come criteri di suddivisione — in particolare, indici derivati da trasformazioni wavelet legati a caratteristiche strutturali dell’immagine MRI. Questo evidenzia il forte potere discriminativo delle feature radiomiche nella diagnosi preoperatoria.
+
+```{r Random Forest dati clinici + radiomici}
+# Al fine di ridurre la complessità si riducono il numero di features da
+# considerare nel singolo albero
+parametri <- sqrt(ncol(train) - 1)/3
+mtry_seq <- 1: floor(parametri)
+ntree_seq <- seq(5, 20, by = 2)
+
+oob_err_mat <- matrix(NA, nrow = length(mtry_seq), ncol = length(ntree_seq))
+test_err_mat <- matrix(NA, nrow = length(mtry_seq), ncol = length(ntree_seq))
+
+rownames(oob_err_mat) <- paste0("mtry_", mtry_seq)
+colnames(oob_err_mat) <- paste0("ntree_", ntree_seq)
+rownames(test_err_mat) <- rownames(oob_err_mat)
+colnames(test_err_mat) <- colnames(oob_err_mat)
+
+set.seed(123)
+for (i in seq(1, length(mtry_seq))) {
+  for (j in seq_along(ntree_seq)) {
+    rf <- randomForest(
+      Grading ~ .,
+      data = train,
+      mtry = mtry_seq[i],
+      ntree = ntree_seq[j],
+      importance = FALSE
+    )
+    oob_err_mat[i, j] <- rf$err.rate[ntree_seq[j], "OOB"]
+    pred <- predict(rf, newdata = test)
+    test_err_mat[i, j] <- mean(pred != test$Grading)
+  }
+}
+
+oob_long <- melt(oob_err_mat, varnames = c("mtry", "ntree"), value.name = "OOB_Error")
+test_long <- melt(test_err_mat, varnames = c("mtry", "ntree"), value.name = "Test_Error")
+
+ggplot(test_long, aes(x = ntree, y = mtry, fill = Test_Error)) +
+  geom_tile() +
+  scale_fill_gradient(low = "#F7FCF5", high = "#00441B") +
+  labs(title = "Errore di Classificazione (Test Set)", x = "ntree", y = "mtry") +
+  theme_minimal()
+
+best_idx <- which(oob_err_mat == min(oob_err_mat, na.rm = TRUE), arr.ind = TRUE)
+best_mtry <- mtry_seq[best_idx[1]]
+best_ntree <- ntree_seq[best_idx[2]]
+
+cat("  Miglior combinazione (errore OOB minimo):\n")
+cat("   → mtry =", best_mtry, "\n")
+cat("   → ntree =", best_ntree, "\n")
+cat("   → errore OOB =", round(min(oob_err_mat, na.rm = TRUE), 4), "\n")
+
+set.seed(123)
+rf_model <- randomForest(
+  Grading ~ ., 
+  data = train, 
+  ntree = best_ntree,    
+  mtry = best_mtry,  
+  importance = TRUE
+)
+
+pred_rf <- predict(rf_model, newdata = test, type = "class")
+levels_comb <- union(levels(pred_rf), levels(test$Grading))
+pred_rf <- factor(pred_rf, levels = levels_comb)
+test$Grading <- factor(test$Grading, levels = levels_comb)
+
+plot(rf_model, col = "#A20045", main = "Random Forest - OOB Error")
+
+
+# Calcolo dell'importanza (ad esempio, se hai già un modello chiamato model_rf)
+var_imp <- importance(rf_model)
+
+# Converti in data frame e aggiungi il nome delle variabili
+df_importanza <- as.data.frame(var_imp)
+df_importanza$Variabile <- rownames(df_importanza)
+
+# Ordina per Gini e prendi le top 20
+df_gini <- df_importanza %>%
+  arrange(desc(MeanDecreaseGini)) %>%
+  slice(1:20)
+
+# Grafico con ggplot2
+ggplot(df_gini, aes(x = reorder(Variabile, MeanDecreaseGini), y = MeanDecreaseGini)) +
+  geom_col(fill = "#C0392B") +
+  coord_flip() +
+  labs(title = "Top 20 Variabili più Importanti (Gini)",
+       x = "Variabile",
+       y = "Importanza (MeanDecreaseGini)") +
+  theme_minimal(base_size = 12)
+
+
+cm_rf_cr<- confusionMatrix(pred_rf, test$Grading, positive = "1")
+
+metrics_rf_cr <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(
+    cm_rf_cr$overall["Accuracy"],
+    cm_rf_cr$byClass["Sensitivity"],
+    cm_rf_cr$byClass["Specificity"],
+    cm_rf_cr$byClass["Pos Pred Value"],
+    cm_rf_cr$byClass["Neg Pred Value"],
+    cm_rf_cr$byClass["Balanced Accuracy"]
+  ), 3)
+)
+
+cat("\n Metriche - Random Forest\n")
+print(metrics_rf_cr, row.names = FALSE)
+
+valuta_modello_vs_nie(pred_rf, test$Grading )
+
+```
+
+L’analisi dei risultati ottenuti con il modello Random Forest, utilizzando sia variabili cliniche che radiomiche, evidenzia performance eccellenti sia in fase di apprendimento che di test. La miglior combinazione di iperparametri selezionata (errore OOB minimo pari a 0.0361 ) corrisponde a:
+
+mtry = 4
+
+ntree = 19
+
+Questa configurazione dimostra un ottimo equilibrio nel bias-variance trade-off: il numero relativamente basso di alberi (19) consente un tempo computazionale contenuto, mentre la scelta di mtry=4 indica una buona esplorazione dello spazio delle variabili predittive ad ogni split.
+
+Dal grafico dell’errore di classificazione (Test Set) emerge chiaramente come il modello migliori progressivamente fino ad azzerare quasi completamente l’errore su più combinazioni mtry-ntree, confermando un’elevata stabilità e generalizzazione.
+
+Il grafico OOB error mostra un rapido decremento dell’errore già nei primi alberi, seguito da una stabilizzazione, indicando che l’aggiunta di ulteriori alberi oltre ntree = 19 apporta benefici marginali.
+
+Il grafico dell’importanza delle variabili (indice Gini) evidenzia come le feature radiomiche, in particolare quelle derivate dalle trasformazioni wavelet (es. wavelet_HLH_glcm_JointEnergy, wavelet_LHH_glrlm_HighGrayLevelRunEmphasis, wavelet_LHL_glcm_Contrast), risultino determinanti nel classificare correttamente le lesioni. 
+
+Infine, le metriche di valutazione sul test set confermano prestazioni eccellenti:
+
+Accuracy: 0.971
+
+Sensitivity: 1.000
+
+Specificity: 0.944
+
+PPV: 0.941
+
+NPV: 1.000
+
+Balanced Accuracy: 0.972
+
+Questi risultati indicano una capacità quasi perfetta del modello di identificare correttamente le lesioni maligne (sensibilità massima) senza trascurare l’affidabilità nel riconoscere le lesioni benigne (specificità elevata), confermando così la robustezza del modello e l’efficacia dell’integrazione tra biomarcatori clinici e caratteristiche radiomiche per la stratificazione preoperatoria delle neoplasie delle ghiandole salivari.
+
+Il parametro mtry è cruciale per il performance tuning del Random Forest. Un valore troppo basso → modello underfitting; troppo alto → overfitting o inefficienza.
+Effettuiamo ora la scelta automatica del numero di features utilizzando come metrica l'AUC.
+
+```{r Boosting CART dati clinici + radiomici}
+depth_seq <- c(2, 4, 6, 8)
+mfinal_seq <- c(5, 10, 20, 25)
+
+train_err_mat <- matrix(NA, nrow = length(depth_seq), ncol = length(mfinal_seq))
+test_err_mat <- matrix(NA, nrow = length(depth_seq), ncol = length(mfinal_seq))
+
+rownames(train_err_mat) <- paste0("depth_", depth_seq)
+colnames(train_err_mat) <- paste0("mfinal_", mfinal_seq)
+rownames(test_err_mat) <- rownames(train_err_mat)
+colnames(test_err_mat) <- colnames(train_err_mat)
+
+set.seed(123)
+for (i in seq_along(depth_seq)) {
+  for (j in seq_along(mfinal_seq)) {
+    model_boost <- boosting(
+      Grading ~ ., 
+      data = train, 
+      mfinal = mfinal_seq[j],
+      control = rpart.control(maxdepth = depth_seq[i])
+    )
+
+    train_pred <- predict(model_boost, newdata = train)
+    train_err_mat[i, j] <- mean(train_pred$class != train$Grading)
+
+    test_pred <- predict(model_boost, newdata = test)
+    test_err_mat[i, j] <- mean(test_pred$class != test$Grading)
+  }
+}
+
+test_long <- melt(test_err_mat, varnames = c("depth", "mfinal"), value.name = "Test_Error")
+
+ggplot(test_long, aes(x = mfinal, y = depth, fill = Test_Error)) +
+  geom_tile() +
+  scale_fill_gradient(low = "#F7FCF5", high = "#00441B") +
+  labs(title = "Errore di Classificazione - Boosting", x = "mfinal", y = "maxdepth") +
+  theme_minimal()
+
+best_idx <- which(test_err_mat == min(test_err_mat, na.rm = TRUE), arr.ind = TRUE)
+best_depth <- depth_seq[best_idx[1]]
+best_mfinal <- mfinal_seq[best_idx[2]]
+
+cat(" Migliore combinazione (errore TEST minimo):\n")
+cat("   → maxdepth =", best_depth, "\n")
+cat("   → mfinal =", best_mfinal, "\n")
+
+boost_final <- boosting(
+  Grading ~ ., 
+  data = train, 
+  mfinal = best_mfinal, 
+  control = rpart.control(maxdepth = best_depth)
+)
+
+pred_boost <- predict(boost_final, newdata = test)
+pred_boost_class <- factor(pred_boost$class, levels = levels(test$Grading))
+# valuta_modello_vs_nie(pred_boost_class, test$Grading)
+pred_boost_class <- factor(pred_boost_class, levels = c("0", "1"))
+test$Grading      <- factor(test$Grading, levels = c("0", "1"))
+
+
+
+cm_boost <- confusionMatrix(pred_boost_class, test$Grading, positive = "1")
+
+metrics_boost <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(
+    cm_boost$overall["Accuracy"],
+    cm_boost$byClass["Sensitivity"],
+    cm_boost$byClass["Specificity"],
+    cm_boost$byClass["Pos Pred Value"],
+    cm_boost$byClass["Neg Pred Value"],
+    cm_boost$byClass["Balanced Accuracy"]
+  ), 3)
+)
+
+cat("\n Metriche - Boosting\n")
+print(metrics_boost, row.names = FALSE)
+```
+
+```{r CIT dati clinici + radiomici}
+# # Assicurati che la variabile target sia un fattore
+# train$Grading <- factor(train$Grading, levels = c(0, 1), labels = c("benigno", "maligno"))
+# test$Grading  <- factor(test$Grading,  levels = c(0, 1), labels = c("benigno", "maligno"))
+# 
+# # Parametri di controllo per l'albero
+# minsplit <- 6
+# minbucket <- floor(minsplit / 3)
+# 
+# # Modello Conditional Inference Tree
+# cit_model <- ctree(
+#   Grading ~ ., 
+#   data = train,
+#   controls = ctree_control(teststat = c("quad", "max"), 
+#               testtype = c("Bonferroni", "MonteCarlo", 
+#                            "Univariate", "Teststatistic"), 
+#               mincriterion = 0.95, minsplit = minsplit, minbucket = minbucket, 
+#               stump = FALSE, nresample = 9999, maxsurrogate = 0, 
+#               mtry = 0, savesplitstats = TRUE, maxdepth = 0, remove_weights = FALSE)
+# )
+# 
+# # Visualizzazione dell'albero
+# plot(cit_model,
+#      type = "simple",
+#      main = "Albero di Decisione CIDT")
+# 
+# # Predizione sul test set
+# pred <- predict(cit_model, newdata = test)
+# 
+# # Matrice di confusione
+# cm  <- confusionMatrix(pred, test$Grading, positive = "maligno")
+# 
+# # Estrazione delle metriche
+# accuracy     <- cm$overall["Accuracy"]
+# sensitivity  <- cm$byClass["Sensitivity"]
+# specificity  <- cm$byClass["Specificity"]
+# ppv          <- cm$byClass["Pos Pred Value"]
+# npv          <- cm$byClass["Neg Pred Value"]
+# balanced_acc <- cm$byClass["Balanced Accuracy"]
+# 
+# # Costruzione tabella dei risultati
+# metriche <- data.frame(
+#   Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+#               "Valore Predittivo Positivo", "Valore Predittivo Negativo", 
+#               "Accuratezza Bilanciata"),
+#   Valore = round(c(accuracy, sensitivity, specificity, ppv, npv, balanced_acc), 3)
+# )
+# 
+# # Visualizzazione formattata
+# knitr::kable(metriche, caption = "Metriche diagnostiche - Conditional Inference Tree")
+
+```
+
+```{r Bagging CART dati clinici + radiomici}
+minsplit = 15
+bag_model <- bagging(
+  Grading ~ ., 
+  data = train, 
+  nbagg = 100, 
+  coob = TRUE,
+  control = rpart.control(
+    minsplit = minsplit,
+    minbucket = minsplit/3,
+    cp = 0,
+    maxdepth = 10,
+    xval = 0
+  )
+)
+
+raw_pred <- predict(bag_model, newdata = test, type = "class")
+actual_bag <- as.factor(test$Grading)
+
+all_levels <- union(levels(pred_bag), levels(actual_bag))
+pred_bag <- factor(pred_bag, levels = all_levels)
+actual_bag <- factor(actual_bag, levels = all_levels)
+
+stopifnot(length(pred_bag) == length(actual_bag))
+
+cm_bag <- confusionMatrix(pred_bag, actual_bag, positive = "1")
+
+metrics_bag <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(
+    cm_bag$overall["Accuracy"],
+    cm_bag$byClass["Sensitivity"],
+    cm_bag$byClass["Specificity"],
+    cm_bag$byClass["Pos Pred Value"],
+    cm_bag$byClass["Neg Pred Value"],
+    cm_bag$byClass["Balanced Accuracy"]
+  ), 3)
+)
+print(metrics_bag, row.names = FALSE)
+```
+
+```{r Tuning Mtry, echo=FALSE, message=FALSE, warning=FALSE}
+
+#RANDOM FOREST con variabili selezionate da LASSO
+X_all<- scale(as.matrix(dati[, selected_vars_reg]))
+dati_finale<- data.frame(X_all, Grading = dati$Grading)
+
+set.seed(123)
+train_index <- createDataPartition(dati_finale$Grading, p = 0.7, list = FALSE)
+train <- dati_finale[train_index, ]
+test <- dati_finale[-train_index, ]
+
+# Rinomina i livelli della variabile target
+train$Grading <- factor(train$Grading, levels = c(0, 1), labels = c("benigno", "maligno"))
+test$Grading  <- factor(test$Grading,  levels = c(0, 1), labels = c("benigno", "maligno"))
+
+# Parametri tuning
+n_features <- ncol(train) - 1
+mtry_min <- 2
+mtry_max <- n_features
+
+# CORRETTO: crea griglia con colonna chiamata "mtry"
+grid <- expand.grid(mtry = mtry_min:mtry_max)
+
+# Cross-validation
+control <- trainControl(
+  method = "cv",
+  number = 5,
+  classProbs = TRUE,
+  summaryFunction = twoClassSummary,
+  savePredictions = "final"
+)
+
+# Tuning del Random Forest con metrica AUC
+set.seed(123)
+rf_model <- train(
+  Grading ~ .,
+  data = train,
+  method = "rf",
+  metric = "ROC",
+  tuneGrid = grid,
+  trControl = control,
+  importance = TRUE
+)
+
+# Output
+print(rf_model)
+plot(rf_model)
+
+best_mtry = 2
+
+set.seed(123)
+rf_model2 <- randomForest(
+  Grading ~ ., 
+  data = train, 
+  ntree = 15,    
+  mtry = best_mtry,  
+  importance = TRUE
+)
+
+pred_rf2 <- predict(rf_model2, newdata = test, type = "class")
+levels_comb <- union(levels(pred_rf2), levels(test$Grading))
+pred_rf <- factor(pred_rf2, levels = levels_comb)
+test$Grading <- factor(test$Grading, levels = levels_comb)
+
+plot(rf_model2, col = "#A20045", main = "Random Forest - OOB Error")
+
+cm_rf_cr2<- confusionMatrix(pred_rf, test$Grading)
+
+metrics_rf_cr2 <- data.frame(
+  Metrica = c("Accuratezza", "Sensibilità", "Specificità", 
+              "Valore Predittivo Positivo", "Valore Predittivo Negativo", "Accuratezza Bilanciata"),
+  Valore = round(c(
+    cm_rf_cr$overall["Accuracy"],
+    cm_rf_cr$byClass["Sensitivity"],
+    cm_rf_cr$byClass["Specificity"],
+    cm_rf_cr$byClass["Pos Pred Value"],
+    cm_rf_cr$byClass["Neg Pred Value"],
+    cm_rf_cr$byClass["Balanced Accuracy"]
+  ), 3)
+)
+
+cat("\n Metriche - Random Forest\n")
+print(metrics_rf_cr2, row.names = FALSE)
+
+valuta_modello_vs_nie(pred_rf2, test$Grading )
+```
+Il valore ottenuto di mtry = 2 con il tuning sull'AUC porta alle stesse prestazioni del RANDOM FOREST. Tuttavia con questo modello NON è significativamente migliore del baseline.
+
+
+```{r riepilogo_modelli, echo=FALSE, message=FALSE, warning=FALSE}
+# --- Tabella riassuntiva delle performance dei modelli classificatori ---
+estrai_metriche <- function(tab, nome_modello) {
+  get_val <- function(nome) {
+    val <- tab$Valore[tab$Metrica == nome]
+    if (length(val) == 0) return(NA) else return(val)
+  }
+  
+  data.frame(
+    Modello = nome_modello,
+    Accuratezza = get_val("Accuratezza"),
+    Sensibilità = get_val("Sensibilità"),
+    Specificità = get_val("Specificità"),
+    `Valore Predittivo Positivo` = get_val("Valore Predittivo Positivo"),
+    `Valore Predittivo Negativo` = get_val("Valore Predittivo Negativo"),
+    `Accuratezza Bilanciata` = get_val("Accuratezza Bilanciata")
+  )
+}
+
+# --- Costruzione tabella aggregata ---
+tabella_finale <- rbind(
+  estrai_metriche(metriche_glm, "Regressione Logistica con LASSO"),
+  estrai_metriche(metriche_cm_cart, "CART (cliniche)"),
+  estrai_metriche(metriche_cm_cit, "CIT Tree"),
+  estrai_metriche(metriche_cm_cart_cr, "CART (radiomiche)"),
+  estrai_metriche(metrics_bag_c, "Bagging (cliniche)"),
+  estrai_metriche(metrics_bag, "Bagging (radiomiche)"),
+  estrai_metriche(metrics_rf_c, "Random Forest (cliniche)"),
+  estrai_metriche(metrics_rf_cr, "Random Forest (radiomiche)"),
+  estrai_metriche(metrics_boost_c, "Boosting"),
+  estrai_metriche(metrics_boost, "Boosting (radiomiche)")
+)
+
+
+# --- Visualizza tabella ---
+knitr::kable(tabella_finale, caption = "Tabella riassuntiva delle metriche diagnostiche dei modelli",
+             digits = 3, align = "c")
+
+tabella_long <- tabella_finale %>%
+  pivot_longer(cols = -Modello, names_to = "Metrica", values_to = "Valore")
+
+ggplot(tabella_long, aes(x = Modello, y = Valore, fill = Metrica)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Confronto delle metriche tra modelli",
+       x = "Modello",
+       y = "Valore della metrica") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+I risultati riportati nella tabella mostrano le performance comparative di diversi modelli di classificazione applicati alla predizione del grading istologico delle lesioni salivari, utilizzando sia variabili cliniche che radiomiche. Nel complesso, i modelli basati su caratteristiche radiomiche hanno fornito prestazioni superiori rispetto a quelli basati solo su dati clinici.
+
+Tra tutti i modelli, Random Forest (radiomiche) ha mostrato le performance migliori in termini di accuratezza (0.971), sensibilità (1.000), specificità (0.944), valore predittivo positivo (PPV = 0.941), valore predittivo negativo (NPV = 1.000), e accuratezza bilanciata (0.972). Questo suggerisce un'eccellente capacità del modello di distinguere correttamente tra casi benigni e maligni, senza sacrificare sensibilità o specificità. Risultati molto simili sono stati ottenuti anche dal modello di Boosting (radiomiche), con accuratezza del 0.941 e AUC bilanciata di 0.944.
+
+Anche il modello CART radiomico ha mostrato performance molto solide (accuratezza: 0.912; sensibilità: 1.000; specificità: 0.833), indicando che anche modelli più semplici possono beneficiare fortemente dell’informazione contenuta nelle variabili radiomiche.
+
+Al contrario, i modelli basati solo su dati clinici, come CART, Bagging o Random Forest clinici, hanno mostrato accuratezza più contenuta (intorno a 0.706–0.882), con una riduzione della specificità e, in alcuni casi, del PPV. Ad esempio, CART clinico ha ottenuto una bassa specificità (0.611), suggerendo una tendenza a classificare in eccesso i casi come maligni.
+
+Il modello Regressione Logistica con LASSO ha ottenuto buoni risultati complessivi (accuratezza: 0.872; sensibilità: 0.821; specificità: 0.888; NPV: 0.940), confermando la validità del metodo di selezione automatica delle variabili.
+
+Infine, i modelli CIT Tree e Bagging hanno mostrato buone performance intermedie. CIT Tree, in particolare, ha ottenuto una sensibilità perfetta (1.000) e un NPV massimo (1.000), ma con specificità inferiore (0.625), indicando che è molto efficace nel riconoscere i maligni, ma meno accurato nel classificare i benigni.
+
+In sintesi:
+Modelli radiomici, soprattutto ensemble (RF, Boosting), sono i più performanti.
+
+Random Forest (radiomiche) è il miglior modello in assoluto in questo confronto.
+
+I modelli clinici sono più deboli, suggerendo che i soli indici infiammatori non bastano per discriminare con accuratezza elevata.
+
+La regressione LASSO è una buona via di mezzo tra interpretabilità e performance.
+
+Questi risultati confermano il valore aggiunto delle caratteristiche radiomiche nel migliorare la stratificazione diagnostica automatica, sottolineando l'importanza dell’integrazione tra approcci clinici e computazionali.
