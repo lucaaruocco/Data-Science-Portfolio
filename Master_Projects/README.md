@@ -1,4 +1,4 @@
-# 🎓 Master Projects – Data Science
+# 🎓 Master Projects – Data Science & AI
 
 This repository contains a selection of the projects developed during the **Master in Artificial Intelligence and Data Science**.  
 Each work combines **statistical analysis, machine learning techniques, and programming** applied to real or simulated datasets.  
